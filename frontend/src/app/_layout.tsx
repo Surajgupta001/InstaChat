@@ -1,5 +1,31 @@
-import { Stack } from "expo-router";
+import { useEffect } from 'react';
+import { Redirect, Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+
+// Authentication guard to check if the user is signed in
+function AuthGuard() {
+  const { isSignedIn } = { isSignedIn: false }
+
+  if (!isSignedIn) {
+    return <Redirect href="/(auth)" />;
+  } else if (isSignedIn) {
+    return <Redirect href="/(tabs)" />;
+  }
+};
 
 export default function RootLayout() {
-  return <Stack />;
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthGuard />
+      <Stack screenOptions={{
+        headerShown: false
+      }}>
+        <Stack.Screen name='(auth)' />
+        <Stack.Screen name='(tabs)' />
+        <Stack.Screen name='chat/[id]' options={{ animation: 'slide_from_right' }} />
+      </Stack>
+      <StatusBar style='dark' />
+    </GestureHandlerRootView>
+  )
 }
