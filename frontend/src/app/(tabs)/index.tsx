@@ -1,4 +1,4 @@
-import { View, Text, TextInput, ActivityIndicator, FlatList } from 'react-native'
+import { View, Text, TextInput, ActivityIndicator, FlatList, TouchableOpacity } from 'react-native'
 import { useEffect, useState } from 'react'
 import { Conversation, UserStory } from '../../../types';
 import { useRouter } from 'expo-router';
@@ -67,12 +67,16 @@ export default function MessagesScreen() {
                     placeholderTextColor={Colors.outlineVariant}
                 />
                 {search.length > 0 && (
-                    <Ionicons
-                        name='close-circle'
-                        size={16}
-                        color={Colors.outlineVariant}
+                    <TouchableOpacity
                         onPress={() => setSearch('')}
-                    />
+                    >
+                        <Ionicons
+                            name='close-circle'
+                            size={16}
+                            color={Colors.outlineVariant}
+                            onPress={() => setSearch('')}
+                        />
+                    </TouchableOpacity>
                 )}
             </View>
 
