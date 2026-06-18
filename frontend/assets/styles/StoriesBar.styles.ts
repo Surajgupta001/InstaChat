@@ -20,7 +20,7 @@ export const styles = StyleSheet.create({
     },
     storyRing: {
         padding: 2,
-        borderRadius: 30,
+        borderRadius: 100,
         borderWidth: 2,
         borderColor: Colors.primary,
     },

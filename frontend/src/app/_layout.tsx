@@ -5,7 +5,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 // Authentication guard to check if the user is signed in
 function AuthGuard() {
-  const { isSignedIn } = { isSignedIn: false }
+  const { isSignedIn } = { isSignedIn: true }
 
   if (!isSignedIn) {
     return <Redirect href="/(auth)" />;
