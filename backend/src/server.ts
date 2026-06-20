@@ -4,6 +4,8 @@ import 'dotenv/config';
 import connectDB from './config/database.js';
 import { clerkMiddleware } from '@clerk/express'
 import userRouter from './routes/user.routes.js';
+import messageRouter from './routes/message.routes.js';
+import errorHandler from './middlewares/errorHandler.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -24,6 +26,10 @@ app.get('/', (req, res) => {
 
 // Routes
 app.use('/api/v1/users', userRouter);
+app.use('/api/v1/messages', messageRouter);
+
+// Error Handler
+app.use(errorHandler);
 
 // Start Server
 app.listen(port, () => {

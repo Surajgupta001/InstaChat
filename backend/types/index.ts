@@ -1,3 +1,6 @@
+import type mongoose from "mongoose";
+import type { Document } from "mongoose";
+
 export interface IUser {
     _id: string;
     name: string;
@@ -10,3 +13,20 @@ export interface IUser {
     createdAt: Date;
     updatedAt: Date;
 };
+
+export interface IMessage extends Document {
+    sender: mongoose.Types.ObjectId;
+    receiver?: mongoose.Types.ObjectId;
+    conversationId: mongoose.Types.ObjectId;
+    text?: string;
+    mediaUrl?: string;
+    mediaType?: "image" | "video";
+    read: boolean;
+    createdAt: Date;
+};
+
+export interface IConversation extends Document {
+    participants: mongoose.Types.ObjectId[];
+    lastMessage?: mongoose.Types.ObjectId;
+    updatedAt: Date;
+}
