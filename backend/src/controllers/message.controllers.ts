@@ -5,6 +5,7 @@ import { findConversation } from "../../utils/utility";
 import { Readable } from "stream";
 import cloudinary from "../config/cloudinary";
 import Message from "../models/message.models";
+import { handleConversationEvent } from "../socket/socketManager";
 
 // Start or get a conversation with a user
 export const getOrCreateConversation = async (req: AuthRequest, res: Response) => {
@@ -251,9 +252,12 @@ export const deleteConversation = async (req: AuthRequest, res: Response) => {
         }
 
         // Notify other participants before deleting
+        await handleConversationEvent(userId, String(conversationId), { type: "chat_deleted", conversationId });
+
+        // Delete all messages in this conversation
+        await Message.deleteMany({ conversationId });
 
         // Delete the conversation and all its messages
-        await Message.deleteMany({ conversationId });
         await Conversation.findByIdAndDelete(conversationId);
 
         res

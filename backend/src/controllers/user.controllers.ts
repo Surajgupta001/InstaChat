@@ -3,6 +3,7 @@ import type { AuthRequest } from "../middlewares/auth.middlewares";
 import User from "../models/user.models";
 import cloudinary from "../config/cloudinary";
 import { Readable } from "stream";
+import { broadcastUserUpdate } from "../socket/socketManager";
 
 // Get all users
 export const getUsers = async (req: AuthRequest, res: Response) => {
@@ -154,6 +155,10 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         uploadData,
         { new: true }
     );
+
+    if (updated) {
+        broadcastUserUpdate(updated);
+    }
 
     res
         .status(200)
