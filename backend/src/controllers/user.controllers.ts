@@ -127,7 +127,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
             })
 
             const result = await uploadPromise;
-            avatarUrl = result.string_url;
+            avatarUrl = (result as any).secure_url;
         } catch (err) {
             console.error('Cloudinary upload error:', err);
             return res
@@ -152,7 +152,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     const updated = await User.findByIdAndUpdate(
         req.user!.id,
         uploadData,
-        { returnDocument: 'after' }
+        { new: true }
     );
 
     res
