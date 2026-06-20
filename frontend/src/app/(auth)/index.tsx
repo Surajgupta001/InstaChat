@@ -1,16 +1,21 @@
 import { styles } from '@/assets/styles/AuthScreen.styles';
 import { useRouter } from 'expo-router';
 import { useState } from 'react'
-import { View, Text, KeyboardAvoidingView, Platform, ScrollView, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native'
+import { View, Text, KeyboardAvoidingView, Platform, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../../constants/Colors';
 import { SvgXml } from 'react-native-svg';
 import { Ionicons } from "@expo/vector-icons";
+import { useClerk, useSignIn, useSignUp } from '@clerk/clerk-expo';
 
 type Mode = 'login' | 'register'
 
 export default function AuthScreen() {
+
+    const { signIn, setActive: signInSetActive } = useSignIn();
+    const { signUp, setActive: signUpSetActive } = useSignUp();
+    const { setActive } = useClerk();
 
     const [mode, setMode] = useState<Mode>('login');
     const [name, setName] = useState('');
@@ -20,23 +25,134 @@ export default function AuthScreen() {
     const [verificationCode, setVerificationCode] = useState('');
     const [loading, setLoading] = useState(false);
     const [verifying, setVerifying] = useState(false);
+    const [verifyingMode, setVerifyingMode] = useState<'login' | 'register' | 'login_mfa'>('register');
 
     const router = useRouter();
 
     const handleSubmit = async () => {
+        if (!email.trim() || !password.trim()) {
+            return Alert.alert('Validation', 'Email and password are required.');
+        }
+
+        if (mode === 'register' && (!name.trim() || !handle.trim())) {
+            return Alert.alert('Validation', 'Name and handle are required for registration.');
+        }
+
         setLoading(true);
-        setTimeout(() => {
+
+        try {
+            if (mode === 'login') {
+                // Handle login logic here - API
+                if (!signIn) return;
+
+                const result = await signIn.create({
+                    identifier: email,
+                    password,
+                })
+
+                if (result.status === 'complete') {
+                    await setActive({ session: result.createdSessionId });
+                    router.replace('/(tabs)');
+                } else if (result.status === 'needs_first_factor') {
+                    const emailFactor = result.supportedFirstFactors?.find(
+                        (f: any) => f.strategy === 'email_code'
+                    );
+                    if (emailFactor) {
+                        await signIn.prepareFirstFactor({
+                            strategy: 'email_code',
+                            emailAddressId: (emailFactor as any).emailAddressId,
+                        });
+                        setVerifyingMode('login');
+                        Alert.alert(
+                            'Check Your Email',
+                            `A 6-digit verification code has been sent to ${email}. Please check your inbox.`,
+                            [{ text: 'OK', onPress: () => setVerifying(true) }]
+                        );
+                    }
+                } else if (result.status === 'needs_second_factor') {
+                    // TOTP codes are generated on-device — no preparation step needed
+                    Alert.alert(
+                        'Two-Factor Authentication',
+                        'Open your authenticator app and enter the 6-digit code to continue.',
+                        [{ text: 'OK', onPress: () => setVerifying(true) }]
+                    );
+                    setVerifyingMode('login_mfa');
+                }
+            } else {
+                // Handle registration logic here - API
+                if (!signUp) return;
+
+                const spaceIdx = name.trim().indexOf(' ');
+                const firstName = spaceIdx === -1 ? name.trim() : name.trim().substring(0, spaceIdx);
+                const lastName = spaceIdx === -1 ? '' : name.trim().substring(spaceIdx + 1);
+
+                const result = await signUp.create({
+                    emailAddress: email,
+                    password,
+                    firstName,
+                    lastName,
+                    username: handle.toLowerCase().replace(/\s/g, ''),
+                })
+
+                await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+
+                setVerifyingMode('register');
+                Alert.alert(
+                    'Verify Your Email',
+                    `A 6-digit verification code has been sent to ${email}. Please check your inbox.`,
+                    [{ text: 'OK', onPress: () => setVerifying(true) }]
+                );
+            }
+        } catch (err: any) {
+            Alert.alert('Authentication Error', err?.errors?.[0]?.message || err?.message || 'An error occurred during authentication.');
+        } finally {
             setLoading(false);
-            setVerifying(true);
-        }, 1500)
+        }
     };
 
     const handleVerify = async () => {
+        if (!verificationCode.trim()) {
+            return Alert.alert('Validation', 'Please enter the verification code.');
+        }
+
         setLoading(true);
-        setTimeout(() => {
+
+        try {
+            if (verifyingMode === 'register') {
+                if (!signUp) return;
+                const result = await signUp.attemptEmailAddressVerification({
+                    code: verificationCode,
+                });
+                if (result.status === 'complete') {
+                    await setActive({ session: result.createdSessionId });
+                    router.replace('/(tabs)');
+                }
+            } else if (verifyingMode === 'login') {
+                if (!signIn) return;
+                const result = await signIn.attemptFirstFactor({
+                    strategy: 'email_code',
+                    code: verificationCode,
+                });
+                if (result.status === 'complete') {
+                    await setActive({ session: result.createdSessionId });
+                    router.replace('/(tabs)');
+                }
+            } else if (verifyingMode === 'login_mfa') {
+                if (!signIn) return;
+                const result = await signIn.attemptSecondFactor({
+                    strategy: 'totp',
+                    code: verificationCode,
+                });
+                if (result.status === 'complete') {
+                    await setActive({ session: result.createdSessionId });
+                    router.replace('/(tabs)');
+                }
+            }
+        } catch (err: any) {
+            Alert.alert('Verification Error', err?.errors?.[0]?.message || err?.message || 'Invalid verification code.');
+        } finally {
             setLoading(false);
-            router.replace('/(tabs)');
-        }, 1500)
+        }
     }
 
     const svgMarkup = `
@@ -232,7 +348,7 @@ export default function AuthScreen() {
                             <TouchableOpacity
                                 onPress={() => setMode(mode === 'login' ? 'register' : 'login')}
                             >
-                                <Text style={styles.toggleText}>{mode === 'login' ? 'Sign up' : 'Sign in'}</Text>
+                                <Text style={styles.toggleLink}>{mode === 'login' ? 'Sign up' : 'Sign in'}</Text>
                             </TouchableOpacity>
                         </View>
 
