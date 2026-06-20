@@ -30,3 +30,13 @@ export interface IConversation extends Document {
     lastMessage?: mongoose.Types.ObjectId;
     updatedAt: Date;
 }
+
+export interface IStory extends Document {
+    user: mongoose.Types.ObjectId;
+    mediaUrl: string;
+    mediaType: "image" | "video";
+    caption?: string;
+    viewers: mongoose.Types.ObjectId[];
+    createdAt: Date;
+    updatedAt: Date;
+}
