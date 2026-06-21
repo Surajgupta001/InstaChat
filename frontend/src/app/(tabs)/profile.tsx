@@ -8,7 +8,7 @@ import { Colors } from '../../../constants/Colors';
 import Avatar from '../../../components/Avatar';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import useApp, { api } from '../../../context/AppContext';
+import { api, useApp } from '../../../context/AppContext';
 
 export default function profile() {
 
@@ -47,9 +47,9 @@ export default function profile() {
 
     const saveProfile = async () => {
         if (!user) return;
-        
+
         setLoading(true);
-        
+
         try {
             const formData = new FormData();
             formData.append('name', profileName.trim());
@@ -63,9 +63,7 @@ export default function profile() {
                 formData.append('avatar', { uri: avatarUri, name: filename, type } as any);
             }
 
-            const { data } = await api.put(`/users/profile`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
+            const { data } = await api.put(`/users/profile`, formData);
 
             if (data.success) {
                 await updateUser(data.user);

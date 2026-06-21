@@ -79,7 +79,8 @@ export const getStories = async (req: AuthRequest, res: Response) => {
     const grouped: Record<string, { user: any; stories: any[] }> = {};
 
     stories.forEach((s) => {
-        const uid = String((s.user as any)._id);
+        if (!s.user) return;
+        const uid = String((s.user as any)._id || (s.user as any).id);
         if (!grouped[uid]) {
             grouped[uid] = {
                 user: s.user,

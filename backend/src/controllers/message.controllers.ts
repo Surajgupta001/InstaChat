@@ -35,7 +35,7 @@ export const getOrCreateConversation = async (req: AuthRequest, res: Response) =
             message: "Conversation retrieved successfully",
             conversation: {
                 _id: conversation._id,
-                participants: other,
+                participant: other,
                 lastMessage: conversation.lastMessage,
             }
         });
@@ -54,7 +54,7 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
         const other = (c.participants as any[]).find((p: any) => String(p._id) !== userId);
         return {
             _id: c._id,
-            participants: other,
+            participant: other,
             lastMessage: c.lastMessage,
             isGroup: false,
             updatedAt: c.updatedAt,
@@ -225,7 +225,7 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
 // Delete a conversation
 export const deleteConversation = async (req: AuthRequest, res: Response) => {
     const userId = req.user!.id;
-    const { conversationId } = req.body;
+    const { conversationId } = req.params;
 
     try {
         const conversation = await Conversation.findById(conversationId);

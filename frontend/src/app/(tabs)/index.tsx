@@ -9,11 +9,11 @@ import { Colors } from '../../../constants/Colors';
 import StoryBar from '../../../components/StoryBar';
 import StoryViewer from '../../../components/StoryViewer';
 import ConversationItem from '../../../components/ConversationItem';
-import { api } from '../../../context/AppContext';
+import { api, useApp } from '../../../context/AppContext';
 
 export default function MessagesScreen() {
 
-    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const { auth, setSelectedConversation, conversations, setConversations, } = useApp();
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(false);
     const [selectedStories, setSelectedStories] = useState<UserStory | null>(null);
@@ -35,8 +35,10 @@ export default function MessagesScreen() {
     };
 
     useEffect(() => {
-        fetchConversations();
-    }, []);
+        if (!auth.loading) {
+            fetchConversations();
+        }
+    }, [auth.loading]);
 
     const lowerSearch = search.toLowerCase();
     const filtered = search ? conversations.filter(
@@ -44,6 +46,7 @@ export default function MessagesScreen() {
     ) : conversations;
 
     const openConvo = (c: Conversation) => {
+        setSelectedConversation(c);
         router.push(`/chat/${c._id}`)
     };
 

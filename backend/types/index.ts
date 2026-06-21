@@ -32,7 +32,7 @@ export interface IConversation extends Document {
 }
 
 export interface IStory extends Document {
-    user: mongoose.Types.ObjectId;
+    user: string;                         // Clerk user ID (string)
     mediaUrl: string;
     mediaType: "image" | "video";
     caption?: string;
