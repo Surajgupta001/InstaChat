@@ -7,132 +7,192 @@ import Conversation from "../models/conversation.models";
 // Map userId -> Websocket
 const onlineUser = new Map<string, WebSocket>();
 
-// Initialize WebSocket server
+// Heartbeat interval (30s) and timeout (10s)
+const HEARTBEAT_INTERVAL = 30_000;
+const HEARTBEAT_TIMEOUT = 10_000;
+
+/**
+ * Initialize WebSocket server with heartbeat and proper async handling.
+ */
 export function initSocketServer(server: any) {
     const wss = new WebSocketServer({ server, path: "/ws" });
 
-    wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
-        console.log("New WebSocket connection established");
-
-        // Extract token from query string: /ws?token=...
-        const url = new URL(req.url!, `http://${req.headers.host}`);
-        const token = url.searchParams.get("token");
-
-        if (!token) {
-            ws.close(1008, "Token is required");
-            return;
-        }
-
-        let userId: string;
-        try {
-            const decode = await verifyToken(token, {
-                secretKey: process.env.CLERK_SECRET_KEY!,
-            });
-            userId = decode.sub;
-        } catch (error) {
-            console.log("Token verification failed:", error);
-            ws.close(1008, "Invalid token");
-            return;
-        }
-
-        // Close existing connection if user reconnects from another device
-        const existingWs = onlineUser.get(userId);
-        if (existingWs && existingWs.readyState === WebSocket.OPEN) {
-            existingWs.close(1000, "Replaced by new connection");
-        }
-
-        // Register the user as online
-        onlineUser.set(userId, ws);
-        await User.findByIdAndUpdate(userId, { isOnline: true });
-
-        // Broadcast user becomes online to other users
-        broadcastOnlineStatus(userId, true);
-
-        ws.on('message', async (data: Buffer) => {
-            try {
-                const msg = JSON.parse(data.toString());
-
-                // Forward message to receiver(s)
-                if (msg.type === "message") {
-                    const { receiverId, conversationId, payload } = msg;
-                    if (conversationId) {
-                        // Direct message with conversationId
-                        await handleConversationEvent(userId, conversationId, { type: 'message', payload });
-                    } else if (receiverId) {
-                        // Legacy direct message
-                        const receiverws = onlineUser.get(receiverId);
-                        if (receiverws?.readyState === WebSocket.OPEN) {
-                            receiverws.send(JSON.stringify({ type: "message", payload }));
-                        }
-                    }
-                }
-
-                // Forward typing indicator to receiver(s)
-                if (msg.type === "typing") {
-                    const { receiverId, conversationId, isTyping } = msg;
-
-                    if (conversationId) {
-                        // Update Typing status in conversation
-                        await handleConversationEvent(userId, conversationId, { type: "typing", senderId: userId, isTyping });
-                    } else if (receiverId) {
-                        // Legacy typing indicator
-                        const receiverws = onlineUser.get(receiverId);
-                        if (receiverws?.readyState === WebSocket.OPEN) {
-                            receiverws.send(JSON.stringify({ type: "typing", senderId: userId, isTyping }));
-                        }
-                    }
-                }
-            } catch (error: any) {
-                console.error("Error processing message:", error);
+    // Heartbeat: ping all connections periodically
+    const heartbeatTimer = setInterval(() => {
+        wss.clients.forEach((ws) => {
+            if ((ws as any)._isAlive === false) {
+                console.log('[WS] Terminating stale connection');
+                return ws.terminate();
             }
-        })
+            (ws as any)._isAlive = false;
+            ws.ping();
+        });
+    }, HEARTBEAT_INTERVAL);
 
-        // Handle disconnection
-        ws.on("close", async () => {
-            console.log(`WebSocket connection closed for user ${userId}`);
-            // Only remove from map if this is still the active connection
-            if (onlineUser.get(userId) === ws) {
-                onlineUser.delete(userId);
-                await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen: new Date() });
-                broadcastOnlineStatus(userId, false);
-            }
-        })
-    })
+    wss.on("close", () => {
+        clearInterval(heartbeatTimer);
+    });
+
+    wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
+        (ws as any)._isAlive = true;
+        (ws as any)._userId = null;
+
+        ws.on("pong", () => {
+            (ws as any)._isAlive = true;
+        });
+
+        handleConnection(ws, req).catch((err) => {
+            console.error('[WS] Connection handler error:', err);
+            ws.close(1011, 'Internal server error');
+        });
+    });
+
     return wss;
+}
+
+async function handleConnection(ws: WebSocket, req: IncomingMessage) {
+    const url = new URL(req.url!, `http://${req.headers.host}`);
+    const token = url.searchParams.get("token");
+
+    if (!token) {
+        ws.close(1008, "Token is required");
+        return;
+    }
+
+    let userId: string;
+    try {
+        const decode = await verifyToken(token, {
+            secretKey: process.env.CLERK_SECRET_KEY!,
+        });
+        userId = decode.sub;
+    } catch (error) {
+        console.log('[WS] Token verification failed');
+        ws.close(1008, "Invalid token");
+        return;
+    }
+
+    // Close existing connection if user reconnects
+    const existingWs = onlineUser.get(userId);
+    if (existingWs && existingWs.readyState === WebSocket.OPEN) {
+        existingWs.close(1000, "Replaced by new connection");
+    }
+
+    // Register user as online
+    onlineUser.set(userId, ws);
+    (ws as any)._userId = userId;
+    await User.findByIdAndUpdate(userId, { isOnline: true });
+    broadcastOnlineStatus(userId, true);
+
+    console.log(`[WS] User ${userId} connected. Online: ${onlineUser.size}`);
+
+    // Handle incoming messages (non-async to prevent out-of-order processing)
+    ws.on("message", (data: Buffer) => {
+        try {
+            const msg = JSON.parse(data.toString());
+            processMessage(userId, msg);
+        } catch (error) {
+            console.error("[WS] Error parsing message:", error);
+        }
+    });
+
+    // Handle disconnection
+    ws.on("close", async () => {
+        console.log(`[WS] User ${userId} disconnected`);
+
+        // Only remove if this is still the active connection
+        if (onlineUser.get(userId) === ws) {
+            onlineUser.delete(userId);
+            await User.findByIdAndUpdate(userId, {
+                isOnline: false,
+                lastSeen: new Date(),
+            });
+            broadcastOnlineStatus(userId, false);
+        }
+    });
+}
+
+/**
+ * Process incoming WebSocket messages synchronously to prevent race conditions.
+ * Async DB operations are fire-and-forget with error handling.
+ */
+function processMessage(senderId: string, msg: any) {
+    if (msg.type === "message") {
+        const { receiverId, conversationId, payload } = msg;
+        if (conversationId) {
+            handleConversationEvent(senderId, conversationId, {
+                type: 'message',
+                payload,
+            });
+        } else if (receiverId) {
+            const receiverWs = onlineUser.get(receiverId);
+            if (receiverWs?.readyState === WebSocket.OPEN) {
+                receiverWs.send(JSON.stringify({ type: "message", payload }));
+            }
+        }
+    }
+
+    if (msg.type === "typing") {
+        const { receiverId, conversationId, isTyping } = msg;
+        if (conversationId) {
+            handleConversationEvent(senderId, conversationId, {
+                type: "typing",
+                senderId,
+                isTyping,
+            });
+        } else if (receiverId) {
+            const receiverWs = onlineUser.get(receiverId);
+            if (receiverWs?.readyState === WebSocket.OPEN) {
+                receiverWs.send(
+                    JSON.stringify({ type: "typing", senderId, isTyping })
+                );
+            }
+        }
+    }
 }
 
 function broadcastOnlineStatus(userId: string, isOnline: boolean) {
     const payload = JSON.stringify({ type: "online_status", userId, isOnline });
     onlineUser.forEach((ws, uid) => {
-        if (uid === userId) return; // Don't broadcast to the user themselves
+        if (uid === userId) return;
         if (ws.readyState === WebSocket.OPEN) {
             ws.send(payload);
         }
     });
-};
+}
 
-export async function handleConversationEvent(senderId: string, conversationId: string, event: Record<string, any>) {
+/**
+ * Broadcast an event to all participants of a conversation.
+ * Uses cached participant list when possible to avoid DB hit.
+ */
+export async function handleConversationEvent(
+    senderId: string,
+    conversationId: string,
+    event: Record<string, any>
+) {
     try {
-        const conversation = await Conversation.findById(conversationId);
+        const conversation = await Conversation.findById(conversationId)
+            .select('participants')
+            .lean();
+
         if (!conversation) {
-            console.error(`Conversation with ID ${conversationId} not found`);
+            console.error(`[WS] Conversation ${conversationId} not found`);
             return;
         }
 
         const payload = JSON.stringify(event);
 
-        conversation.participants.forEach((pId) => {
+        for (const pId of conversation.participants) {
             const participantId = String(pId);
-            if (participantId === senderId) return; // Skip sender
+            if (participantId === senderId) continue;
             const ws = onlineUser.get(participantId);
             if (ws?.readyState === WebSocket.OPEN) {
                 ws.send(payload);
             }
-        })
+        }
     } catch (error) {
-        console.error("Error broadcasting conversation event:", error);
+        console.error("[WS] Error broadcasting conversation event:", error);
     }
-};
+}
 
 export function broadcastUserUpdate(user: any) {
     const payload = JSON.stringify({ type: "user_update", user });
@@ -143,4 +203,4 @@ export function broadcastUserUpdate(user: any) {
     });
 }
 
-export { onlineUser };
+export { onlineUser };

@@ -1,7 +1,7 @@
 import { StyleSheet } from "react-native";
-import { Colors } from "../../constants/Colors";
+import { ThemeColors } from "../../constants/Colors";
 
-export const styles = StyleSheet.create({
+export const getStyles = (colors: ThemeColors) => StyleSheet.create({
     row: {
         flexDirection: "row",
         alignItems: "center",
@@ -10,25 +10,25 @@ export const styles = StyleSheet.create({
         paddingVertical: 12,
         borderRadius: 20,
     },
-    rowSelected: { backgroundColor: Colors.surfaceHigh },
+    rowSelected: { backgroundColor: colors.surfaceHigh },
     info: { flex: 1, minWidth: 0 },
     topRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
     nameCol: { flex: 1, minWidth: 0 },
     name: {
         fontSize: 16,
         fontWeight: "600",
-        color: Colors.onSurface,
+        color: colors.onSurface,
     },
     handle: {
         fontSize: 12,
         fontWeight: "600",
-        color: Colors.primary,
+        color: colors.primary,
         opacity: 0.6,
     },
-    time: { fontSize: 12, color: Colors.onSurfaceVariant, marginLeft: 8 },
+    time: { fontSize: 12, color: colors.onSurfaceVariant, marginLeft: 8 },
     lastMsg: {
         fontSize: 12,
-        color: Colors.onSurfaceVariant,
+        color: colors.onSurfaceVariant,
         marginTop: 2,
     },
 });

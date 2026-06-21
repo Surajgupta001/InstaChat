@@ -1,9 +1,9 @@
 import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native'
 import { useEffect, useState } from 'react'
-import { styles } from '@/assets/styles/StoriesBar.styles';
+import { getStyles } from '@/assets/styles/StoriesBar.styles';
 import { UserStory } from '../types';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/Colors';
+import { useTheme, useThemeStyles } from '../context/ThemeContext';
 import * as ImagePicker from 'expo-image-picker';
 import Avatar from './Avatar';
 import { api, useApp } from '../context/AppContext';
@@ -16,6 +16,8 @@ export default function StoryBar({ onViewStory }: storiesBarProps) {
 
     const [uploading, setUploading] = useState(false);
     const { auth, userStories, fetchStories } = useApp();
+    const { colors } = useTheme();
+    const styles = useThemeStyles(getStyles);
 
     useEffect(() => {
         if (!auth.loading) {
@@ -68,6 +70,7 @@ export default function StoryBar({ onViewStory }: storiesBarProps) {
         <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={styles.list}
             contentContainerStyle={styles.container}
             data={[{ _addStory: true }, ...userStories] as any[]}
             keyExtractor={(item, i) => (item._addStory ? 'add' : item.user._id || String(i))}
@@ -83,7 +86,7 @@ export default function StoryBar({ onViewStory }: storiesBarProps) {
                                 <Ionicons
                                     name={uploading ? 'hourglass' : 'add'}
                                     size={24}
-                                    color={Colors.onSurfaceVariant}
+                                    color={colors.onSurfaceVariant}
                                 />
                             </View>
                             <Text style={styles.label}>Your Story</Text>
@@ -92,12 +95,15 @@ export default function StoryBar({ onViewStory }: storiesBarProps) {
                 }
 
                 const us = item as UserStory;
+                const isSeen = us.stories.every(s => s.viewers?.includes(auth.user?._id || ''));
+                const ringColor = isSeen ? '#ffffff' : colors.primary;
+
                 return (
                     <TouchableOpacity
                         style={styles.storyItem}
                         onPress={() => onViewStory(us)}
                     >
-                        <View style={styles.storyRing}>
+                        <View style={[styles.storyRing, { borderColor: ringColor }]}>
                             <Avatar
                                 name={us.user.name}
                                 src={us.user.avatar}

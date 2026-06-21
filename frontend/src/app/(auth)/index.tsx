@@ -1,13 +1,14 @@
-import { styles } from '@/assets/styles/AuthScreen.styles';
+import { getStyles } from '@/assets/styles/AuthScreen.styles';
 import { useRouter } from 'expo-router';
 import { useState } from 'react'
 import { View, Text, KeyboardAvoidingView, Platform, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors } from '../../../constants/Colors';
+import { useTheme, useThemeStyles } from '../../../context/ThemeContext';
 import { SvgXml } from 'react-native-svg';
 import { Ionicons } from "@expo/vector-icons";
-import { useClerk, useSignIn, useSignUp } from '@clerk/clerk-expo';
+import { useClerk, useSignIn, useSignUp, useAuth } from '@clerk/clerk-expo';
+import LandingPage from '../../../components/LandingPage';
 
 type Mode = 'login' | 'register'
 
@@ -16,8 +17,10 @@ export default function AuthScreen() {
     const { signIn, setActive: signInSetActive } = useSignIn();
     const { signUp, setActive: signUpSetActive } = useSignUp();
     const { setActive } = useClerk();
+    const { isSignedIn, isLoaded } = useAuth();
 
     const [mode, setMode] = useState<Mode>('login');
+    const [showLanding, setShowLanding] = useState(true);
     const [name, setName] = useState('');
     const [handle, setHandle] = useState('');
     const [email, setEmail] = useState('');
@@ -28,6 +31,8 @@ export default function AuthScreen() {
     const [verifyingMode, setVerifyingMode] = useState<'login' | 'register' | 'login_mfa'>('register');
 
     const router = useRouter();
+    const { colors } = useTheme();
+    const styles = useThemeStyles(getStyles);
 
     const handleSubmit = async () => {
         if (!email.trim() || !password.trim()) {
@@ -168,6 +173,10 @@ export default function AuthScreen() {
         </defs>
     </svg>`;
 
+    if (!isLoaded || isSignedIn) {
+        return null;
+    }
+
     if (verifying) {
         return (
             <SafeAreaView
@@ -186,7 +195,7 @@ export default function AuthScreen() {
                             style={styles.logoRow}
                         >
                             <LinearGradient
-                                colors={[Colors.primary, Colors.primaryContainer]}
+                                colors={[colors.primary, colors.primaryContainer]}
                                 style={styles.logoBox}
                             >
                                 <SvgXml xml={svgMarkup} width='50%' height='50%' />
@@ -207,7 +216,7 @@ export default function AuthScreen() {
                                     value={verificationCode}
                                     onChangeText={setVerificationCode}
                                     placeholder="Enter 6-digit code"
-                                    placeholderTextColor={Colors.outlineVariant}
+                                    placeholderTextColor={colors.outlineVariant}
                                     keyboardType="number-pad"
                                     autoCapitalize='none'
                                 />
@@ -231,18 +240,18 @@ export default function AuthScreen() {
                                 onPress={handleVerify}
                             >
                                 <LinearGradient
-                                    colors={[Colors.primary, Colors.primaryContainer]}
+                                    colors={[colors.primary, colors.primaryContainer]}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 1, y: 0 }}
                                     style={styles.btn}
                                 >
                                     {loading ? (
-                                        <ActivityIndicator color={Colors.onPrimary} size='small' />
+                                        <ActivityIndicator color={colors.onPrimary} size='small' />
                                     ) : (
                                         <>
                                             <Text style={styles.btnText}>
                                                 Verify Code
-                                                <Ionicons name='arrow-forward' size={18} color={Colors.onPrimary} />
+                                                <Ionicons name='arrow-forward' size={18} color={colors.onPrimary} />
                                             </Text>
 
                                         </>
@@ -254,6 +263,10 @@ export default function AuthScreen() {
                 </KeyboardAvoidingView>
             </SafeAreaView>
         );
+    }
+
+    if (showLanding) {
+        return <LandingPage onGetStarted={() => setShowLanding(false)} />;
     }
 
     return (
@@ -268,12 +281,35 @@ export default function AuthScreen() {
                     contentContainerStyle={styles.scroll}
                     keyboardShouldPersistTaps="handled"
                 >
+                    {/* Back to landing page button */}
+                    <TouchableOpacity
+                        onPress={() => setShowLanding(true)}
+                        style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            alignSelf: 'flex-start',
+                            marginBottom: 16,
+                            paddingVertical: 6,
+                            paddingHorizontal: 10,
+                            borderRadius: 8,
+                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                            borderWidth: 1,
+                            borderColor: 'rgba(255, 255, 255, 0.08)',
+                            marginLeft: 4,
+                        }}
+                    >
+                        <Ionicons name="arrow-back" size={14} color={colors.primary} />
+                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600', marginLeft: 4 }}>
+                            Back
+                        </Text>
+                    </TouchableOpacity>
+
                     {/* Logo */}
                     <View
                         style={styles.logoRow}
                     >
                         <LinearGradient
-                            colors={[Colors.primary, Colors.primaryContainer]}
+                            colors={[colors.primary, colors.primaryContainer]}
                             style={styles.logoBox}
                         >
                             <SvgXml xml={svgMarkup} width='50%' height='50%' />
@@ -296,7 +332,7 @@ export default function AuthScreen() {
                                         value={name}
                                         onChangeText={setName}
                                         placeholder="Your Name"
-                                        placeholderTextColor={Colors.outlineVariant}
+                                        placeholderTextColor={colors.outlineVariant}
                                         autoCapitalize='words'
                                     />
                                 </View>
@@ -309,7 +345,7 @@ export default function AuthScreen() {
                                             value={handle}
                                             onChangeText={(v) => setHandle(v.replace(/\s/g, ''))}
                                             placeholder="Username"
-                                            placeholderTextColor={Colors.outlineVariant}
+                                            placeholderTextColor={colors.outlineVariant}
                                             autoCapitalize='none'
                                         />
                                     </View>
@@ -323,7 +359,7 @@ export default function AuthScreen() {
                                 value={email}
                                 onChangeText={setEmail}
                                 placeholder="you@example.com"
-                                placeholderTextColor={Colors.outlineVariant}
+                                placeholderTextColor={colors.outlineVariant}
                                 keyboardType="email-address"
                                 autoCapitalize='none'
                             />
@@ -335,7 +371,7 @@ export default function AuthScreen() {
                                 value={password}
                                 onChangeText={setPassword}
                                 placeholder="••••••••"
-                                placeholderTextColor={Colors.outlineVariant}
+                                placeholderTextColor={colors.outlineVariant}
                                 secureTextEntry
                             />
                         </View>
@@ -360,18 +396,18 @@ export default function AuthScreen() {
                             onPress={handleSubmit}
                         >
                             <LinearGradient
-                                colors={[Colors.primary, Colors.primaryContainer]}
+                                colors={[colors.primary, colors.primaryContainer]}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 0 }}
                                 style={styles.btn}
                             >
                                 {loading ? (
-                                    <ActivityIndicator color={Colors.onPrimary} size='small' />
+                                    <ActivityIndicator color={colors.onPrimary} size='small' />
                                 ) : (
                                     <>
                                         <Text style={styles.btnText}>
                                             {mode === 'login' ? 'Sign in' : 'Create Account'}
-                                            <Ionicons name='arrow-forward' size={18} color={Colors.onPrimary} />
+                                            <Ionicons name='arrow-forward' size={18} color={colors.onPrimary} />
                                         </Text>
 
                                     </>

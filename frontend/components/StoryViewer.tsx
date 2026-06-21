@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video'
 import Avatar from './Avatar';
+import { api, useApp } from '../context/AppContext';
 
 const STORY_DURATION = 5000; // 5 seconds per story
 
@@ -22,6 +23,18 @@ export default function StoryViewer({ userStory, onClose }: StoryViewerProps) {
     const AnimatedRef = useRef<Animated.CompositeAnimation>(null);
 
     const story = userStory.stories[currentIndex];
+    const { auth, fetchStories } = useApp();
+    const currentUserId = auth.user?._id;
+
+    useEffect(() => {
+        if (story && currentUserId) {
+            api.post(`/stories/${story._id}/view`)
+                .then(() => {
+                    fetchStories();
+                })
+                .catch((err) => console.error('[StoryViewer] Failed to mark story as viewed:', err));
+        }
+    }, [story?._id, currentUserId, fetchStories]);
 
     const startProgess = () => {
         progressAnimations.setValue(0);

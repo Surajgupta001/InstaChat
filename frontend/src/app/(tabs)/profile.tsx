@@ -1,10 +1,10 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useState } from 'react'
 import { dummyUserProfile } from '@/assets/assets'
-import { styles } from '@/assets/styles/ProfileScreen.styles';
+import { getStyles } from '@/assets/styles/ProfileScreen.styles';
 import { ScrollView, View, Text, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../../../constants/Colors';
+import { useTheme, useThemeStyles } from '../../../context/ThemeContext';
 import Avatar from '../../../components/Avatar';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
@@ -13,6 +13,8 @@ import { api, useApp } from '../../../context/AppContext';
 export default function profile() {
 
     const { auth, logout, updateUser } = useApp();
+    const { theme, setTheme, colors } = useTheme();
+    const styles = useThemeStyles(getStyles);
 
     const user = auth.user;
     const [editMode, setEditMode] = useState(false);
@@ -131,7 +133,7 @@ export default function profile() {
                             <Ionicons
                                 name="pencil"
                                 size={16}
-                                color={Colors.primary}
+                                color={colors.primary}
                             />
                             <Text style={styles.editBtnText}>Edit</Text>
                         </TouchableOpacity>
@@ -182,7 +184,7 @@ export default function profile() {
                                 value={profileName}
                                 onChangeText={setProfileName}
                                 placeholder="Your Name"
-                                placeholderTextColor={Colors.outlineVariant}
+                                placeholderTextColor={colors.outlineVariant}
                                 autoCapitalize='words'
                             />
                         </View>
@@ -197,7 +199,7 @@ export default function profile() {
                                     value={profileHandle}
                                     onChangeText={(v) => setProfileHandle(v.toLowerCase().replace(/\s/g, ''))}
                                     placeholder="username"
-                                    placeholderTextColor={Colors.outlineVariant}
+                                    placeholderTextColor={colors.outlineVariant}
                                     autoCapitalize='none'
                                 />
                             </View>
@@ -211,7 +213,7 @@ export default function profile() {
                                 value={profileBio}
                                 onChangeText={setProfileBio}
                                 placeholder="Tell us about yourself"
-                                placeholderTextColor={Colors.outlineVariant}
+                                placeholderTextColor={colors.outlineVariant}
                                 multiline
                                 numberOfLines={3}
                             />
@@ -225,13 +227,13 @@ export default function profile() {
                             activeOpacity={0.88}
                         >
                             <LinearGradient
-                                colors={[Colors.primary, Colors.primaryContainer]}
+                                colors={[colors.primary, colors.primaryContainer]}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
                                 style={styles.saveBtn}
                             >
                                 {loading ? (
-                                    <ActivityIndicator color={Colors.onPrimary} />
+                                    <ActivityIndicator color={colors.onPrimary} />
                                 ) : (
                                     <Text style={styles.saveBtnText}>Save Changes</Text>
                                 )}
@@ -259,29 +261,63 @@ export default function profile() {
                                 <Ionicons
                                     name="settings-outline"
                                     size={20}
-                                    color={Colors.onSurfaceVariant}
+                                    color={colors.onSurfaceVariant}
                                 />
                             </View>
                             <Text style={styles.optionText}>Settings</Text>
                             <Ionicons
                                 name="chevron-forward"
                                 size={16}
-                                color={Colors.onSurfaceVariant}
+                                color={colors.onSurfaceVariant}
                             />
                         </TouchableOpacity>
+
+                        {/* Theme Switcher Row */}
+                        <View style={styles.optionRow}>
+                            <View style={styles.optionIcon}>
+                                <Ionicons
+                                    name="color-palette-outline"
+                                    size={20}
+                                    color={colors.onSurfaceVariant}
+                                />
+                            </View>
+                            <Text style={styles.optionText}>Theme</Text>
+                            <View style={styles.themeSelectorContainer}>
+                                {(['light', 'dark', 'system'] as const).map((t) => (
+                                    <TouchableOpacity
+                                        key={t}
+                                        style={[
+                                            styles.themeButton,
+                                            theme === t && styles.themeButtonActive
+                                        ]}
+                                        onPress={() => setTheme(t)}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.themeButtonText,
+                                                theme === t && styles.themeButtonTextActive
+                                            ]}
+                                        >
+                                            {t.charAt(0).toUpperCase() + t.slice(1)}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </View>
+
                         <TouchableOpacity style={styles.optionRow}>
                             <View style={styles.optionIcon}>
                                 <Ionicons
                                     name="notifications-outline"
                                     size={20}
-                                    color={Colors.onSurfaceVariant}
+                                    color={colors.onSurfaceVariant}
                                 />
                             </View>
                             <Text style={styles.optionText}>Notifications</Text>
                             <Ionicons
                                 name="chevron-forward"
                                 size={16}
-                                color={Colors.onSurfaceVariant}
+                                color={colors.onSurfaceVariant}
                             />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.optionRow}>
@@ -289,14 +325,14 @@ export default function profile() {
                                 <Ionicons
                                     name="lock-closed-outline"
                                     size={20}
-                                    color={Colors.onSurfaceVariant}
+                                    color={colors.onSurfaceVariant}
                                 />
                             </View>
                             <Text style={styles.optionText}>Privacy & Security</Text>
                             <Ionicons
                                 name="chevron-forward"
                                 size={16}
-                                color={Colors.onSurfaceVariant}
+                                color={colors.onSurfaceVariant}
                             />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.optionRow}>
@@ -304,14 +340,14 @@ export default function profile() {
                                 <Ionicons
                                     name="help-circle-outline"
                                     size={20}
-                                    color={Colors.onSurfaceVariant}
+                                    color={colors.onSurfaceVariant}
                                 />
                             </View>
                             <Text style={styles.optionText}>Help & Support</Text>
                             <Ionicons
                                 name="chevron-forward"
                                 size={16}
-                                color={Colors.onSurfaceVariant}
+                                color={colors.onSurfaceVariant}
                             />
                         </TouchableOpacity>
                     </View>
@@ -326,7 +362,7 @@ export default function profile() {
                         <Ionicons
                             name="log-out-outline"
                             size={20}
-                            color={Colors.error}
+                            color={colors.error}
                         />
                         <Text style={styles.signOutText}>Sign Out</Text>
                     </TouchableOpacity>
