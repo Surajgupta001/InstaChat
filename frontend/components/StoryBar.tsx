@@ -1,12 +1,12 @@
 import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native'
-import React, { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { styles } from '@/assets/styles/StoriesBar.styles';
 import { UserStory } from '../types';
-import { dummyStoriesData } from '@/assets/assets';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import * as ImagePicker from 'expo-image-picker';
 import Avatar from './Avatar';
+import { api, useApp } from '../context/AppContext';
 
 interface storiesBarProps {
     onViewStory: (us: UserStory) => void;
@@ -15,7 +15,13 @@ interface storiesBarProps {
 export default function StoryBar({ onViewStory }: storiesBarProps) {
 
     const [uploading, setUploading] = useState(false);
-    const { userStories } = { userStories: dummyStoriesData };
+    const { auth, userStories, fetchStories } = useApp();
+
+    useEffect(() => {
+        if (!auth.loading) {
+            fetchStories();
+        }
+    }, [auth.loading, fetchStories]);
 
     const pickAndUpload = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -45,10 +51,17 @@ export default function StoryBar({ onViewStory }: storiesBarProps) {
 
         setUploading(true);
 
-        setTimeout(() => {
+        try {
+            const { data } = await api.post('/stories', formData);
+            if (data.success) {
+                fetchStories();
+            }
+        } catch (error) {
+            Alert.alert('Failed to upload story', 'Please try again later.');
+            console.error('Error uploading story:', error);
+        } finally {
             setUploading(false);
-            Alert.alert('Story uploaded successfully!');
-        }, 2000);
+        }
     };
 
     return (

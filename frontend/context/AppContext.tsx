@@ -131,18 +131,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setAuth((prev) => ({ ...prev, user }));
     }, []);
 
-    const fetchStories = useCallback(async (attempt = 0) => {
-        const MAX_ATTEMPTS = 3;
+    const fetchStories = useCallback(async () => {
+        if (!_tokenRef.current) return;
         try {
             const { data } = await api.get('/stories');
             if (data.success) {
                 setUserStories(data.stories);
             }
         } catch (error) {
-            if (attempt < MAX_ATTEMPTS) {
-                setTimeout(() => fetchStories(attempt + 1), 1000 * (attempt + 1));
-            } else {
-                console.error('fetchStories failed after max retries');
+            // Retry after 3s until successful, but only if still signed in
+            if (_tokenRef.current) {
+                setTimeout(() => fetchStories(), 3000);
             }
         }
     }, []);
@@ -301,7 +300,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     )
 };
 
-export default function useApp() {
+export function useApp() {
     const context = useContext(AppContext);
 
     if (!context) {

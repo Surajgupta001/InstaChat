@@ -1,13 +1,13 @@
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, FlatList } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, FlatList, Alert } from 'react-native'
 import { useEffect, useState } from 'react'
-import type { User as IUser } from '../../../types';
+import type { Conversation, User as IUser } from '../../../types';
 import { useRouter } from 'expo-router';
-import { dummyUsers } from '@/assets/assets';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { styles } from '@/assets/styles/SearchScreen.styles';
 import { Colors } from '../../../constants/Colors';
 import Ionicons from '@expo/vector-icons/build/Ionicons';
 import Avatar from '../../../components/Avatar';
+import { api, useApp } from '../../../context/AppContext';
 
 export default function search() {
 
@@ -17,21 +17,42 @@ export default function search() {
 
     const router = useRouter();
 
+    const { auth, setConversations, setSelectedConversation } = useApp();
+
     const fetchUsers = async () => {
+        if (auth.loading) return;
         setLoading(true);
-        setTimeout(() => {
-            setUsers(dummyUsers);
+        try {
+            const endpoint = search ? `/users/search?query=${search}` : '/users';
+            const { data } = await api.get<{ success: boolean; users: IUser[] }>(endpoint);
+            if (data.success) {
+                setUsers(data.users);
+            }
+        } catch (error) {
+            console.error('Error fetching users:', error);
+        } finally {
             setLoading(false);
-        }, 1000);
+        }
     };
 
     useEffect(() => {
+        if (auth.loading) return;
         const timer = setTimeout(fetchUsers, 300);
         return () => clearTimeout(timer);
-    }, [search]);
+    }, [search, auth.loading]);
 
     const startChat = async (user: IUser) => {
-        router.push(`/chat/${user._id}`);
+        try {
+            const { data } = await api.get<{ success: boolean; conversation: Conversation }>(`/messages/conversations/with/${user._id}`);
+
+            if (data.success) {
+                setSelectedConversation(data.conversation);
+                setConversations((prev) => (prev.some((c) => c._id === data.conversation._id) ? prev : [data.conversation, ...prev]));
+                router.push(`/chat/${data.conversation._id}`);
+            }
+        } catch (error) {
+            Alert.alert('Error', 'Failed to start conversation');
+        }
     };
 
     return (

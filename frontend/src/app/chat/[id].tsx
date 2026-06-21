@@ -1,7 +1,6 @@
 import { View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, FlatList, Image, TextInput, Alert } from 'react-native'
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'expo-router';
-import { dummyConversationData, dummyMessages, dummyUserProfile, dummyUsers } from '@/assets/assets';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { styles } from '@/assets/styles/ChatScreen.styles';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,33 +10,87 @@ import Avatar from '../../../components/Avatar';
 import Bubble from '../../../components/Bubble';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
+import { api, useApp } from '../../../context/AppContext';
+import { Message } from '../../../types';
 
 export default function chatScreen() {
 
   const router = useRouter();
 
-  let { auth, messages, users, selectedConversation, typingUsers } = {
-    auth: { user: dummyUserProfile },
-    messages: dummyMessages,
-    users: dummyUsers,
-    selectedConversation: dummyConversationData[0],
-    typingUsers: {
-      [dummyUsers[0]._id]: true,
-    }
+  const { id } = useLocalSearchParams<{ id: string }>();
 
-  }
+  let { auth, conversations, messages, users, selectedConversation, typingUsers, setConversations, setMessages, sendWsEvent, setSelectedConversation } = useApp();
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mediaUri, setMediaUri] = useState<string | null>(null);
+  const [mediaMime, setMediaMime] = useState<string>('image/jpeg');
+  const [mediaName, setMediaName] = useState<string>('media.jpg');
 
   const flatListRef = useRef<FlatList>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   const partner = selectedConversation?.participant;
 
-  const deleteChat = () => {
+  // Auto-select conversation if selectedConversation is null or mismatched (e.g., on direct page reload)
+  useEffect(() => {
+    if (id && conversations.length > 0) {
+      const found = conversations.find((c) => c._id === id);
+      if (found && selectedConversation?._id !== id) {
+        setSelectedConversation(found);
+      }
+    }
+  }, [id, conversations, selectedConversation, setSelectedConversation]);
 
+  // Load Messages for this conversation
+  useEffect(() => {
+    if (!id || auth.loading) return;
+    setLoading(true);
+    const fetchMessages = async () => {
+      api.get(`/messages/conversations/${id}/messages`)
+        .then(({ data }) => {
+          if (data.success) {
+            setMessages(data.messages);
+            setLoading(false);
+          }
+        })
+        .catch((err) => {
+          console.error(`[ChatScreen] Failed to load messages for conversation ${id}:`, err?.response?.status, err?.response?.data || err?.message);
+          setTimeout(fetchMessages, 1000);
+        });
+    };
+    fetchMessages();
+  }, [id, auth.loading]);
+
+  // Scroll to bottom when new message arrives
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages]);
+
+  const deleteChat = () => {
+    const msg = `Delete this chat? This cannot be undone.`;
+    Alert.alert('Confirm delete', msg, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            const { data } = await api.delete(`/messages/conversations/${selectedConversation?._id}`);
+            if (data.success) {
+              setConversations((prev) => prev.filter((c) => c._id !== selectedConversation?._id));
+              setSelectedConversation(null);
+              router.back();
+            }
+          } catch (error) {
+            Alert.alert('Error', 'Failed to delete the chat. Please try again.');
+          }
+        }
+      }
+    ])
   };
 
   const pickMedia = async () => {
@@ -58,6 +111,8 @@ export default function chatScreen() {
     if (!result.canceled && result.assets[0].uri) {
       const asset = result.assets[0];
       setMediaUri(asset.uri);
+      setMediaMime(asset.mimeType || 'image/jpeg');
+      setMediaName(asset.fileName || (asset.mimeType === 'video' ? 'video.mp4' : 'photo.jpg'));
     }
   };
 
@@ -65,15 +120,48 @@ export default function chatScreen() {
     if (sending || (!text.trim() && !mediaUri)) return;
     setSending(true);
 
-    setTimeout(() => {
-      setText('');
-      setMediaUri(null);
+    try {
+      const formData = new FormData();
+      formData.append('receiverId', partner!._id);
+      if (text.trim()) {
+        formData.append('text', text.trim());
+      }
+      if (mediaUri) {
+        formData.append('file', {
+          uri: mediaUri,
+          type: mediaMime,
+          name: mediaName,
+        } as any);
+      }
+
+      const { data } = await api.post<{ success: boolean, message: Message }>('/messages/send', formData);
+      if (data.success) {
+        setMessages((prev) => [...prev, data.message]);
+        const target = { receiverId: partner!._id };
+        sendWsEvent({ type: 'message', ...target, payload: data.message });
+        setText('');
+        setMediaUri(null);
+      }
+    } catch (error: any) {
+      console.error('[send] Message upload error details:', error?.response?.status, error?.response?.data || error?.message);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to send message. Please try again.');
+    } finally {
       setSending(false);
-    }, 500);
+    }
   }
 
   const handleTyping = (val: string) => {
     setText(val);
+    const target = { receiverId: partner!._id };
+    if (!target.receiverId) return;
+    sendWsEvent({ type: 'typing', ...target, isTyping: true });
+
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+    }
+    typingTimerRef.current = setTimeout(() => {
+      sendWsEvent({ type: 'typing', ...target, isTyping: false });
+    }, 1500);
   };
 
   const typingEntries = Object.entries(typingUsers).filter(([uid, isTyping]) => {
@@ -81,15 +169,6 @@ export default function chatScreen() {
 
     return partner?._id === uid;
   })
-
-  // Scroll to bottom when new message arrives
-  useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [messages]);
 
   if (!selectedConversation) {
     return (
