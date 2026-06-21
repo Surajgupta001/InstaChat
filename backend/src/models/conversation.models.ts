@@ -3,7 +3,7 @@ import type { IConversation } from "../../types";
 
 const ConversationSchema = new Schema<IConversation>({
     participants: [{
-        type: Schema.Types.ObjectId,
+        type: String,   // Clerk user IDs are strings, not ObjectId
         ref: "User",
         required: true,
     }],

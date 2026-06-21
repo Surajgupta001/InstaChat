@@ -3,12 +3,12 @@ import type { IMessage } from "../../types";
 
 const MessageSchema = new Schema<IMessage>({
     sender: {
-        type: Schema.Types.ObjectId,
+        type: String,   // Clerk user IDs are strings, not ObjectId
         ref: "User",
         required: true,
     },
     receiver: {
-        type: Schema.Types.ObjectId,
+        type: String,   // Clerk user IDs are strings, not ObjectId
         ref: "User",
     },
     conversationId: {
