@@ -1,8 +1,7 @@
 import { View, Text, TextInput, ActivityIndicator, FlatList, TouchableOpacity } from 'react-native'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Conversation, UserStory } from '../../../types';
 import { useRouter } from 'expo-router';
-import { dummyConversationData } from '@/assets/assets';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { styles } from '@/assets/styles/MessagesScreen.styles';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +9,7 @@ import { Colors } from '../../../constants/Colors';
 import StoryBar from '../../../components/StoryBar';
 import StoryViewer from '../../../components/StoryViewer';
 import ConversationItem from '../../../components/ConversationItem';
+import { api } from '../../../context/AppContext';
 
 export default function MessagesScreen() {
 
@@ -22,10 +22,16 @@ export default function MessagesScreen() {
 
     const fetchConversations = async () => {
         setLoading(true);
-        setTimeout(() => {
-            setConversations(dummyConversationData as any);
-            setLoading(false);
-        }, 1000);
+        try {
+            const { data } = await api.get<{ success: boolean; conversations: Conversation[] }>('/messages/conversations');
+            if (data.success) {
+                setConversations(data.conversations);
+            }
+        } catch (err) {
+            console.error('Failed to load conversations:', err);
+        } finally {
+            setLoading(false); // ← always stop the spinner
+        }
     };
 
     useEffect(() => {

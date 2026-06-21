@@ -15,8 +15,8 @@ export interface IUser {
 };
 
 export interface IMessage extends Document {
-    sender: mongoose.Types.ObjectId;
-    receiver?: mongoose.Types.ObjectId;
+    sender: string;                       // Clerk user ID (string)
+    receiver?: string;                    // Clerk user ID (string)
     conversationId: mongoose.Types.ObjectId;
     text?: string;
     mediaUrl?: string;
@@ -26,7 +26,7 @@ export interface IMessage extends Document {
 };
 
 export interface IConversation extends Document {
-    participants: mongoose.Types.ObjectId[];
+    participants: string[];               // Clerk user IDs (strings)
     lastMessage?: mongoose.Types.ObjectId;
     updatedAt: Date;
 }
