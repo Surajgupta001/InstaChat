@@ -9,6 +9,11 @@ export interface User {
     lastSeen: string;
 }
 
+export interface Reaction {
+    userId: string;
+    emoji: string;
+}
+
 export interface Message {
     _id: string;
     sender: string;
@@ -17,6 +22,8 @@ export interface Message {
     mediaUrl?: string;
     mediaType?: "image" | "video";
     read: boolean;
+    reactions?: Reaction[];
+    replyTo?: Message;
     createdAt: string;
     conversationId: string;
 }
@@ -26,6 +33,12 @@ export interface Conversation {
     participant?: User; // For 1-on-1 chats
     lastMessage?: Message;
     updatedAt: string;
+    isGroup?: boolean;
+    groupName?: string;
+    groupAvatar?: string;
+    members?: (string | User)[];
+    groupAdmins?: string[];
+    unreadCount?: number;
 }
 
 export interface Story {
@@ -33,6 +46,7 @@ export interface Story {
     user: User;
     mediaUrl: string;
     mediaType: "image" | "video";
+    viewers?: string[];
     createdAt: string;
 }
 

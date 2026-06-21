@@ -1,8 +1,9 @@
-import { createContext, Dispatch, ReactNode, SetStateAction, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { AuthState, Conversation, Message, User, UserStory, WsEvent } from "../types";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useRef } from "react";
+import type { Conversation, Message, User, UserStory, WsEvent } from "../types";
 import axios from "axios";
 import { API_BASE_URL, WS_BASE_URL } from "../constants/Config";
 import { useAuth, useUser } from "@clerk/clerk-expo";
+import { useAuthStore, useChatStore, useUiStore } from "../store";
 
 export const api = axios.create({
     baseURL: API_BASE_URL,
@@ -10,50 +11,53 @@ export const api = axios.create({
 
 const _tokenRef = { current: null as string | null };
 
+type Setter<T> = T | ((prev: T) => T);
+
 interface AppContextType {
-    auth: AuthState;
+    auth: { user: User | null; token: string | null; loading: boolean };
     logout: () => Promise<void>;
     updateUser: (user: User) => Promise<void>;
 
     users: User[];
-    setUsers: Dispatch<SetStateAction<User[]>>;
+    setUsers: (users: Setter<User[]>) => void;
 
     userStories: UserStory[];
-    setUserStories: Dispatch<SetStateAction<UserStory[]>>;
+    setUserStories: (stories: Setter<UserStory[]>) => void;
 
     conversations: Conversation[];
-    setConversations: Dispatch<SetStateAction<Conversation[]>>;
+    setConversations: (conversations: Setter<Conversation[]>) => void;
     selectedConversation: Conversation | null;
     setSelectedConversation: (c: Conversation | null) => void;
 
     messages: Message[];
-    setMessages: Dispatch<SetStateAction<Message[]>>;
+    setMessages: (messages: Setter<Message[]>) => void;
 
     fetchStories: () => Promise<void>;
     typingUsers: Record<string, boolean>;
     sendWsEvent: (data: object) => void;
+    markAsRead: (conversationId: string) => Promise<void>;
+    createGroup: (groupName: string, participantIds: string[]) => Promise<Conversation | null>;
 }
-
 
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-
-    const [auth, setAuth] = useState<AuthState>({ token: null, user: null, loading: true });
-    const [users, setUsers] = useState<User[]>([]);
-
     const { getToken, isLoaded: authLoaded, isSignedIn, signOut } = useAuth();
     const { user: clerkUser, isLoaded: userLoaded } = useUser();
 
-    const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [userStories, setUserStories] = useState<UserStory[]>([]);
-    const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({});
-
     const wsRef = useRef<WebSocket | null>(null);
-
     const getTokenRef = useRef(getToken);
+
+    // Zustand stores
+    const authStore = useAuthStore();
+    const chatStore = useChatStore();
+    const uiStore = useUiStore();
+
+    // Selected conversation ref for WS handler
+    const selectedConversationRef = useRef(chatStore.selectedConversation);
+    useEffect(() => {
+        selectedConversationRef.current = chatStore.selectedConversation;
+    }, [chatStore.selectedConversation]);
 
     useEffect(() => {
         getTokenRef.current = getToken;
@@ -74,31 +78,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 console.error('Axios interceptor error:', err);
             }
             return config;
-        })
-
+        });
         return () => {
             api.interceptors.request.eject(interceptor);
-        }
-    }, [isSignedIn])
+        };
+    }, [isSignedIn]);
 
-    // Keep Local AuthState in sync with DB — triggers lazy user creation in backend
+    // Keep Local AuthState in sync with DB
     useEffect(() => {
         if (!authLoaded || !userLoaded) return;
 
         if (isSignedIn && clerkUser) {
-            // Fetch token first to ensure interceptor has it before the API call
             getTokenRef.current().then((token) => {
                 if (token) _tokenRef.current = token;
 
-                // Fetch real DB user — authMiddlewares will auto-create if not exists
                 api.get('/users/profile')
                     .then(({ data }) => {
                         if (data.success) {
-                            setAuth({ token: _tokenRef.current, user: data.user, loading: false });
+                            authStore.setAuth({ token: _tokenRef.current, user: data.user, loading: false });
                         }
                     })
                     .catch(() => {
-                        // Fallback to Clerk data if backend is unreachable
                         const mappedUser: User = {
                             _id: clerkUser.id,
                             name: clerkUser.firstName || '',
@@ -109,11 +109,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
                             isOnline: true,
                             lastSeen: new Date().toISOString(),
                         };
-                        setAuth({ token: _tokenRef.current, user: mappedUser, loading: false });
+                        authStore.setAuth({ token: _tokenRef.current, user: mappedUser, loading: false });
                     });
             });
         } else {
-            setAuth({ token: null, user: null, loading: false });
+            authStore.setAuth({ token: null, user: null, loading: false });
         }
     }, [isSignedIn, authLoaded, userLoaded, clerkUser]);
 
@@ -121,14 +121,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         _tokenRef.current = null;
         wsRef.current?.close();
         await signOut();
-        setAuth({ token: null, user: null, loading: false });
-        setConversations([]);
-        setMessages([]);
-        setSelectedConversation(null);
+        authStore.reset();
+        chatStore.reset();
     }, [signOut]);
 
     const updateUser = useCallback(async (user: User) => {
-        setAuth((prev) => ({ ...prev, user }));
+        authStore.setUser(user);
     }, []);
 
     const fetchStories = useCallback(async () => {
@@ -136,10 +134,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
             const { data } = await api.get('/stories');
             if (data.success) {
-                setUserStories(data.stories);
+                uiStore.setUserStories(data.stories);
             }
         } catch (error) {
-            // Retry after 3s until successful, but only if still signed in
             if (_tokenRef.current) {
                 setTimeout(() => fetchStories(), 3000);
             }
@@ -152,7 +149,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    // Websocket lifecycle secures with dynamic clerk token
+    const markAsRead = useCallback(async (conversationId: string) => {
+        if (!_tokenRef.current) return;
+        try {
+            await api.put(`/messages/conversations/${conversationId}/read`);
+        } catch (error) {
+            console.error('[markAsRead] Failed:', error);
+        }
+    }, []);
+
+    const createGroup = useCallback(async (groupName: string, participantIds: string[]) => {
+        if (!_tokenRef.current) return null;
+        try {
+            const { data } = await api.post('/messages/conversations/group', { groupName, participantIds });
+            if (data.success) {
+                chatStore.setConversations((prev) => [data.conversation, ...prev]);
+                return data.conversation;
+            }
+        } catch (error) {
+            console.error('[createGroup] Failed:', error);
+        }
+        return null;
+    }, []);
+
+    const setSelectedConversation = useCallback((c: Conversation | null) => {
+        chatStore.setSelectedConversation(c);
+        if (c) {
+            chatStore.clearConversationUnread(c._id);
+            api.put(`/messages/conversations/${c._id}/read`).catch(console.error);
+        }
+    }, []);
+
+    // WebSocket lifecycle
     useEffect(() => {
         if (!isSignedIn || !authLoaded || !userLoaded) {
             wsRef.current?.close();
@@ -170,98 +198,155 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 ws = new WebSocket(`${WS_BASE_URL}/ws?token=${token}`);
                 wsRef.current = ws;
 
-                ws.onopen = () => {
-                    console.log('✅ WebSocket established');
-                };
+                ws.onopen = () => console.log('WebSocket connected');
 
                 ws.onmessage = (e) => {
                     const event: WsEvent = JSON.parse(e.data);
+                    const userId = authStore.user?._id;
 
                     if (event.type === 'message') {
                         const incoming = event.payload as Message;
-                        setMessages((prev) => {
-                            if (prev.length > 0 && prev[0].conversationId === incoming.conversationId) {
-                                // Append to end — messages are sorted oldest-first (ASC)
-                                return [...prev, incoming];
-                            }
-                            return prev;
-                        })
 
-                        setConversations((prev) => {
-                            const exists = prev.some((c) => c._id === incoming.conversationId);
-                            if (!exists) {
-                                // Fetch all conversations if the incoming one doesn't exist locally
-                                api.get('/messages/conversations')
-                                    .then(({ data }) => {
-                                        if (data.success) {
-                                            setConversations(data.conversations);
-                                        }
-                                    }).catch(console.error);
+                        const isCurrentChat = selectedConversationRef.current?._id === incoming.conversationId;
 
-                                return prev;
-                            }
+                        if (isCurrentChat) {
+                            incoming.read = true;
+                            api.put(`/messages/conversations/${incoming.conversationId}/read`).catch(console.error);
+                            chatStore.clearConversationUnread(incoming.conversationId);
+                        } else {
+                            chatStore.incrementConversationUnread(incoming.conversationId);
+                        }
 
-                            return prev.map((c) => c._id === incoming.conversationId ? { ...c, lastMessage: incoming, updatedAt: incoming.createdAt } : c).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-                        })
+                        chatStore.addMessage(incoming);
+                        chatStore.updateConversationLastMessage(incoming.conversationId, incoming);
+
+                        // If conversation doesn't exist locally, refresh list
+                        const exists = useChatStore.getState().conversations.some(
+                            (c) => c._id === incoming.conversationId
+                        );
+                        if (!exists) {
+                            api.get('/messages/conversations')
+                                .then(({ data }) => {
+                                    if (data.success) chatStore.setConversations(data.conversations);
+                                })
+                                .catch(console.error);
+                        }
+                    }
+
+                    if (event.type === 'messages_read') {
+                        const { conversationId } = event;
+                        if (conversationId && userId) {
+                            chatStore.markMessagesRead(conversationId, userId);
+                        }
+                    }
+
+                    if (event.type === 'message_reaction') {
+                        const { messageId, reactions } = event;
+                        if (messageId) chatStore.updateMessageReactions(messageId, reactions);
+                    }
+
+                    if (event.type === 'new_group_chat') {
+                        api.get('/messages/conversations')
+                            .then(({ data }) => {
+                                if (data.success) chatStore.setConversations(data.conversations);
+                            })
+                            .catch(console.error);
+                    }
+
+                    if (event.type === 'group_members_updated') {
+                        const { conversationId, participants } = event;
+                        if (conversationId && participants) {
+                            chatStore.setConversations((prev) =>
+                                prev.map((c) => (c._id === conversationId ? { ...c, participants } : c))
+                            );
+                        }
                     }
 
                     if (event.type === 'typing') {
                         const { senderId, isTyping } = event;
                         if (senderId && isTyping !== undefined) {
-                            setTypingUsers((prev) => ({ ...prev, [senderId]: isTyping }));
+                            chatStore.setTypingUsers((prev) => ({ ...prev, [senderId]: isTyping }));
                         }
                     }
 
                     if (event.type === 'online_status') {
-                        const { userId, isOnline } = event;
-                        if (userId && isOnline !== undefined) {
-                            setUsers((prev) => prev.map((u) => u._id === userId ? { ...u, isOnline } : u));
-                            setConversations((prev) => prev.map((c) => {
-                                if (c.participant?._id === userId) {
-                                    // Fix: correct key 'participant', not 'participants'
-                                    return { ...c, participant: { ...c.participant, isOnline } };
-                                }
-                                return c;
-                            }));
+                        const { userId: uid, isOnline } = event;
+                        if (uid && isOnline !== undefined) {
+                            uiStore.updateUserOnlineStatus(uid, isOnline);
+                            chatStore.setConversations((prev) =>
+                                prev.map((c) => {
+                                    if (c.participant?._id === uid) {
+                                        return { ...c, participant: { ...c.participant, isOnline } };
+                                    }
+                                    return c;
+                                })
+                            );
                         }
                     }
 
                     if (event.type === 'user_update') {
                         const updated = event.user as User;
-
                         if (updated) {
-                            setUsers((prev) => prev.map((u) => u._id === updated._id ? updated : u));
-                            setConversations((prev) => prev.map((c) => {
-                                if (c.participant?._id === updated._id) {
-                                    return { ...c, participant: updated };
-                                }
-                                return c;
-                            }));
-                            setSelectedConversation((prev) => {
+                            uiStore.updateUser(updated);
+                            chatStore.setConversations((prev) =>
+                                prev.map((c) =>
+                                    c.participant?._id === updated._id
+                                        ? { ...c, participant: updated }
+                                        : c
+                                )
+                            );
+                            chatStore.setSelectedConversation((prev) => {
                                 if (prev && prev.participant?._id === updated._id) {
                                     return { ...prev, participant: updated };
                                 }
                                 return prev;
                             });
-                            setUserStories((prev) => prev.map((s) => s.user._id === updated._id ? { ...s, user: updated } : s))
                         }
                     }
 
                     if (event.type === 'chat_deleted') {
                         const { conversationId } = event;
-                        if (conversationId) {
-                            setConversations((prev) => prev.filter((c) => c._id !== conversationId));
-                            setSelectedConversation((prev) => (prev?._id === conversationId ? null : prev));
+                        if (conversationId) chatStore.removeConversation(conversationId);
+                    }
+
+                    if (event.type === 'message_edited') {
+                        const { messageId, text } = event;
+                        if (messageId && text) {
+                            chatStore.setMessages((prev) =>
+                                prev.map((m) => (m._id === messageId ? { ...m, text } : m))
+                            );
+                            chatStore.setConversations((prev) =>
+                                prev.map((c) => {
+                                    if (c.lastMessage && c.lastMessage._id === messageId) {
+                                        return { ...c, lastMessage: { ...c.lastMessage, text } as Message };
+                                    }
+                                    return c;
+                                })
+                            );
+                        }
+                    }
+
+                    if (event.type === 'message_deleted') {
+                        const { messageId } = event;
+                        if (messageId) {
+                            chatStore.setMessages((prev) =>
+                                prev.filter((m) => m._id !== messageId)
+                            );
+                            chatStore.setConversations((prev) =>
+                                prev.map((c) => {
+                                    if (c.lastMessage?._id === messageId) {
+                                        return { ...c, lastMessage: undefined };
+                                    }
+                                    return c;
+                                })
+                            );
                         }
                     }
                 };
+
                 ws.onerror = () => {
-                    console.warn('[WS] Error — closing and will reconnect');
                     ws?.close();
-                    // Reconnect after a short delay
-                    if (isMounted) {
-                        setTimeout(() => connectWs(), 3000);
-                    }
+                    if (isMounted) setTimeout(() => connectWs(), 3000);
                 };
             } catch (error) {
                 console.error('WebSocket connection error:', error);
@@ -273,39 +358,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return () => {
             isMounted = false;
             ws?.close();
-        }
+        };
     }, [isSignedIn, authLoaded, userLoaded]);
 
     return (
-        <AppContext.Provider value={{
-            auth,
-            logout,
-            updateUser,
-            users,
-            setUsers,
-            conversations,
-            setConversations,
-            selectedConversation,
-            setSelectedConversation,
-            messages,
-            setMessages,
-            userStories,
-            setUserStories,
-            fetchStories,
-            typingUsers,
-            sendWsEvent
-        }}>
+        <AppContext.Provider
+            value={{
+                auth: { user: authStore.user, token: authStore.token, loading: authStore.loading },
+                logout,
+                updateUser,
+                users: uiStore.users,
+                setUsers: uiStore.setUsers,
+                conversations: chatStore.conversations,
+                setConversations: chatStore.setConversations,
+                selectedConversation: chatStore.selectedConversation,
+                setSelectedConversation,
+                messages: chatStore.messages,
+                setMessages: chatStore.setMessages,
+                userStories: uiStore.userStories,
+                setUserStories: uiStore.setUserStories,
+                fetchStories,
+                typingUsers: chatStore.typingUsers,
+                sendWsEvent,
+                markAsRead,
+                createGroup,
+            }}
+        >
             {children}
         </AppContext.Provider>
-    )
-};
+    );
+}
 
 export function useApp() {
     const context = useContext(AppContext);
-
     if (!context) {
         throw new Error("useApp must be used within an AppProvider");
     }
-
     return context;
 }

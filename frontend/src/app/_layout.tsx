@@ -5,8 +5,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ClerkLoaded, ClerkProvider, useAuth } from '@clerk/clerk-expo'
 import { tokenCache } from '@clerk/clerk-expo/token-cache'
 import { ActivityIndicator, View } from 'react-native';
-import { Colors } from '../../constants/Colors';
 import { AppProvider } from '../../context/AppContext';
+import { ThemeProvider, useTheme } from '../../context/ThemeContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -20,8 +20,8 @@ if (!publishableKey) {
 function AuthGuard() {
   const { isSignedIn, isLoaded } = useAuth();
   const segments = useSegments();
-
   const router = useRouter();
+  const { colors } = useTheme();
 
   useEffect(() => {
     SplashScreen.hideAsync();
@@ -41,10 +41,10 @@ function AuthGuard() {
           flex: 1,
           justifyContent: 'center',
           alignItems: 'center',
-          backgroundColor: Colors.surface
+          backgroundColor: colors.surface
         }}
       >
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     )
   }
@@ -52,24 +52,35 @@ function AuthGuard() {
   return null;
 };
 
+function AppWithTheme() {
+  const { isDark } = useTheme();
+  return (
+    <AppProvider>
+      <AuthGuard />
+      <Stack screenOptions={{
+        headerShown: false
+      }}>
+        <Stack.Screen name='(auth)' />
+        <Stack.Screen name='(tabs)' />
+        <Stack.Screen name='chat/[id]' options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name='chat/create-group' options={{ animation: 'slide_from_bottom' }} />
+      </Stack>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+    </AppProvider>
+  )
+}
+
 export default function RootLayout() {
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <ClerkLoaded>
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <AppProvider>
-            <AuthGuard />
-            <Stack screenOptions={{
-              headerShown: false
-            }}>
-              <Stack.Screen name='(auth)' />
-              <Stack.Screen name='(tabs)' />
-              <Stack.Screen name='chat/[id]' options={{ animation: 'slide_from_right' }} />
-            </Stack>
-            <StatusBar style='dark' />
-          </AppProvider>
+          <ThemeProvider>
+            <AppWithTheme />
+          </ThemeProvider>
         </GestureHandlerRootView>
       </ClerkLoaded>
     </ClerkProvider>
   )
 }
+

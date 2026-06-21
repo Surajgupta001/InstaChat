@@ -14,6 +14,11 @@ export interface IUser {
     updatedAt: Date;
 };
 
+export interface IReaction {
+    userId: string;
+    emoji: string;
+}
+
 export interface IMessage extends Document {
     sender: string;                       // Clerk user ID (string)
     receiver?: string;                    // Clerk user ID (string)
@@ -22,12 +27,19 @@ export interface IMessage extends Document {
     mediaUrl?: string;
     mediaType?: "image" | "video";
     read: boolean;
+    reactions: IReaction[];
+    replyTo?: mongoose.Types.ObjectId;
+    idempotencyKey?: string;
     createdAt: Date;
 };
 
 export interface IConversation extends Document {
     participants: string[];               // Clerk user IDs (strings)
     lastMessage?: mongoose.Types.ObjectId;
+    isGroup: boolean;
+    groupName?: string;
+    groupAvatar?: string;
+    groupAdmins: string[];
     updatedAt: Date;
 }
 
@@ -36,7 +48,7 @@ export interface IStory extends Document {
     mediaUrl: string;
     mediaType: "image" | "video";
     caption?: string;
-    viewers: mongoose.Types.ObjectId[];
+    viewers: string[];
     createdAt: Date;
     updatedAt: Date;
 }

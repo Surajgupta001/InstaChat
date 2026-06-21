@@ -11,6 +11,21 @@ const ConversationSchema = new Schema<IConversation>({
         type: Schema.Types.ObjectId,
         ref: "Message",
     },
+    isGroup: {
+        type: Boolean,
+        default: false,
+    },
+    groupName: {
+        type: String,
+        trim: true,
+    },
+    groupAvatar: {
+        type: String,
+    },
+    groupAdmins: [{
+        type: String,
+        ref: "User",
+    }],
 }, {
     timestamps: true,
 });
