@@ -136,7 +136,7 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
                       style={[styles.bubbleSent, styles.bubbleMedia]}
                     >
                       <Image
-                        source={require('../assets/images/media-mockup.png')}
+                        source={require('../assets/images/media-mockup.jpg')}
                         style={styles.bubbleImage}
                       />
                       <View style={styles.playButtonOverlay}>
@@ -152,7 +152,7 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
                   {/* Quote Card (Received/Message) */}
                   <View style={styles.quoteCardContainer}>
                     <Image
-                      source={require('../assets/images/kalam.png')}
+                      source={require('../assets/images/kalam.jpg')}
                       style={styles.quoteAvatar}
                     />
                     <View style={styles.quoteCard}>
